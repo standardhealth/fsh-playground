@@ -85,11 +85,15 @@ it('renders a delete button in editor header that opens a confirmation and then 
     profiles: [
       {
         resourceType: 'StructureDefinition',
-        id: 'ProfileA'
+        id: 'ProfileA',
+        kind: 'resource',
+        derivation: 'constraint'
       },
       {
         resourceType: 'StructureDefinition',
-        id: 'ProfileB'
+        id: 'ProfileB',
+        kind: 'resource',
+        derivation: 'constraint'
       }
     ],
     extensions: [],
@@ -100,7 +104,7 @@ it('renders a delete button in editor header that opens a confirmation and then 
     codeSystems: []
   };
   const stringifiedPackageAfterDelete = [
-    { resourceType: 'StructureDefinition', id: 'ProfileA', def: JSON.stringify(simplePackage.profiles[0], null, 2) }
+    { resourceType: 'Profile', id: 'ProfileA', def: JSON.stringify(simplePackage.profiles[0], null, 2) }
   ];
 
   const { getByRole, getByText, queryByText } = render(
@@ -130,7 +134,7 @@ it('renders a delete button in editor header that opens a confirmation and then 
   deleteButton = queryByText('Delete');
   expect(deleteButton).toBeInTheDocument();
   const dialogBox = deleteButton.parentNode.parentNode.parentNode; // Not sure why this can't be selected with a label
-  expect(dialogBox.textContent).toContain('Are you sure you want to delete StructureDefinition/ProfileB?');
+  expect(dialogBox.textContent).toContain('Are you sure you want to delete Profile ProfileB?');
 
   // Clicking delete confirmation deletes the definition
   updateText.mockReset();
@@ -184,29 +188,40 @@ describe('file tree display', () => {
       profiles: [
         {
           resourceType: 'StructureDefinition',
-          id: 'ProfileA'
+          id: 'ProfileA',
+          kind: 'resource',
+          derivation: 'constraint'
         },
         {
           resourceType: 'StructureDefinition',
-          id: 'ProfileB'
+          id: 'ProfileB',
+          kind: 'complex-type',
+          derivation: 'constraint'
         }
       ],
       extensions: [
         {
           resourceType: 'StructureDefinition',
-          id: 'ExtensionA'
+          id: 'ExtensionA',
+          kind: 'complex-type',
+          derivation: 'constraint',
+          type: 'Extension'
         }
       ],
       logicals: [
         {
           resourceType: 'StructureDefinition',
-          id: 'LogicalA'
+          id: 'LogicalA',
+          kind: 'logical',
+          derivation: 'specialization'
         }
       ],
       resources: [
         {
           resourceType: 'StructureDefinition',
-          id: 'ResourceA'
+          id: 'ResourceA',
+          kind: 'resource',
+          derivation: 'specialization'
         }
       ],
       instances: [
@@ -217,6 +232,10 @@ describe('file tree display', () => {
         {
           resourceType: 'Observation',
           id: 'AnObservationExample'
+        },
+        {
+          resourceType: 'StructureDefinition',
+          id: 'AStructureDefinitionInstance'
         }
       ],
       valueSets: [
@@ -246,17 +265,26 @@ describe('file tree display', () => {
       container
     );
 
-    const sdList = getAllByTestId('StructureDefinitions-defId');
+    const profileList = getAllByTestId('Profiles-defId');
+    const extensionsList = getAllByTestId('Extensions-defId');
+    const logicalsList = getAllByTestId('Logical Models-defId');
+    const resourcesList = getAllByTestId('Resources-defId');
     const vsList = getAllByTestId('ValueSets-defId');
     const csList = getAllByTestId('CodeSystems-defId');
     const instanceList = getAllByTestId('Instances-defId');
 
-    expect(sdList).toHaveLength(5); // Profiles, Extensions, Logicals, and Resources grouped together
-    expect(sdList[0].textContent).toEqual('ExtensionA'); // Sorted alphabetically
-    expect(sdList[1].textContent).toEqual('LogicalA');
-    expect(sdList[2].textContent).toEqual('ProfileA');
-    expect(sdList[3].textContent).toEqual('ProfileB');
-    expect(sdList[4].textContent).toEqual('ResourceA');
+    expect(profileList).toHaveLength(2); // Profiles get their own category
+    expect(profileList[0].textContent).toEqual('ProfileA'); // Sorted alphabetically
+    expect(profileList[1].textContent).toEqual('ProfileB');
+
+    expect(extensionsList).toHaveLength(1); // Extensions get their own category
+    expect(extensionsList[0].textContent).toEqual('ExtensionA');
+
+    expect(logicalsList).toHaveLength(1); // Logicals get their own category
+    expect(logicalsList[0].textContent).toEqual('LogicalA');
+
+    expect(resourcesList).toHaveLength(1); // Resources get their own category
+    expect(resourcesList[0].textContent).toEqual('ResourceA');
 
     expect(vsList).toHaveLength(1); // VS get their own category
     expect(vsList[0].textContent).toEqual('MyValueSet');
@@ -264,9 +292,10 @@ describe('file tree display', () => {
     expect(csList).toHaveLength(1); // CS get their own category
     expect(csList[0].textContent).toEqual('MyCS');
 
-    expect(instanceList).toHaveLength(2); // All other resourceTypes are grouped to Instances
+    expect(instanceList).toHaveLength(3); // All other resourceTypes are grouped to Instances, including StructureDefinitions that do not fit a FSH entity type
     expect(instanceList[0].textContent).toEqual('AnObservationExample'); // Sorted alphabetically
-    expect(instanceList[1].textContent).toEqual('MyPatient');
+    expect(instanceList[1].textContent).toEqual('AStructureDefinitionInstance');
+    expect(instanceList[2].textContent).toEqual('MyPatient');
   });
 
   it('resets currentDef and initialText of editor when a new definition is clicked', () => {
@@ -317,5 +346,36 @@ describe('file tree display', () => {
 
     const untitledDef = getByText('Untitled');
     expect(untitledDef).toBeInTheDocument();
+  });
+
+  it('sorts a definition to Unknown Type if a definition does not have a resourceType', () => {
+    const profileWithoutId = {
+      profiles: [
+        {
+          id: 'NoType'
+          // No resourceType field - this is to represent the case when someone removed or never included a resourceType. SUSHI packages should always have ids.
+        }
+      ],
+      extensions: [],
+      logicals: [],
+      resources: [],
+      instances: [],
+      valueSets: [],
+      codeSystems: []
+    };
+    const { getAllByTestId } = render(
+      <JSONOutput
+        showNewText={true}
+        setShowNewText={() => {}}
+        isWaiting={false}
+        updateTextValue={() => {}}
+        text={JSON.stringify(profileWithoutId, null, 2)}
+      />,
+      container
+    );
+
+    const unknownList = getAllByTestId('Unknown Type-defId');
+    expect(unknownList).toHaveLength(1); // Unknown types get their own category
+    expect(unknownList[0].textContent).toEqual('NoType');
   });
 });

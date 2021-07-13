@@ -78,6 +78,41 @@ const useStyles = makeStyles((theme) => ({
   }
 }));
 
+const checkFshType = (def) => {
+  // The criteria in this function is based on isSDForInstance in GoFSH (LakeOfFHIR.ts)
+  // A Profile has kind "resource", "complex-type", or "primitive-type" and derivation "constraint".
+  // An Extension has kind "complex-type", derivation "constraint", and type "Extension". It's a special case of Profile.
+  // A Logical has kind "logical" and derivation "specialization".
+  // A Resource has kind "resource" and derivation "specialization".
+  // Any other combination of values for kind and derivation represents an Instance.
+  if (def.resourceType === 'ValueSet' || def.resourceType === 'CodeSystem') {
+    return def.resourceType;
+  } else if (def.resourceType === 'StructureDefinition') {
+    if (def.derivation === 'specialization') {
+      if (def.kind === 'resource') {
+        return 'Resource';
+      } else if (def.kind === 'logical') {
+        return 'Logical Model';
+      }
+    } else if (def.derivation === 'constraint') {
+      if (def.kind === 'complex-type' && def.type === 'Extension') {
+        return 'Extension';
+      } else if (['resource', 'complex-type', 'primitive-type'].includes(def.kind)) {
+        return 'Profile';
+      }
+    }
+  }
+
+  // We could have an instance of a SD that can't be a Profile, Extension, Logical, or Resource
+  // So we want to check for any resource that hasn't already been categorized
+  if (def.resourceType != null) {
+    return 'Instance';
+  }
+
+  // Otherwise we don't know the type. This will default to 'Unknown Type' if it is missing.
+  return null;
+};
+
 // Flatten the package so we can render and navigate it more easily,
 // but keep high level attributes we'll need accessible
 const getIterablePackage = (defsPackage) => {
@@ -90,7 +125,7 @@ const getIterablePackage = (defsPackage) => {
     ...defsPackage.valueSets,
     ...defsPackage.codeSystems
   ];
-  return defArray.map((def) => ({ resourceType: def.resourceType, id: def.id, def: JSON.stringify(def, null, 2) }));
+  return defArray.map((def) => ({ resourceType: checkFshType(def), id: def.id, def: JSON.stringify(def, null, 2) }));
 };
 
 export default function JSONOutput(props) {
@@ -152,14 +187,14 @@ export default function JSONOutput(props) {
       // If it's new, set metadata (definition text is set below)
       if (!fhirDefinitions[currentDef]) {
         updatedDefs[currentDef] = {
-          resourceType: latestJSON.resourceType,
+          resourceType: checkFshType(latestJSON),
           id: latestJSON.id ?? 'Untitled'
         };
       }
 
       // Update resource type if it has changed
       if (!fhirDefinitions[currentDef] || latestJSON.resourceType !== fhirDefinitions[currentDef].resourceType) {
-        updatedDefs[currentDef].resourceType = latestJSON.resourceType;
+        updatedDefs[currentDef].resourceType = checkFshType(latestJSON);
       }
 
       // Update id if it has changed or it is new
@@ -245,12 +280,12 @@ export default function JSONOutput(props) {
     if (!defToDelete) {
       return;
     }
-    const type = defToDelete.resourceType || 'Instance';
+    const type = defToDelete.resourceType || 'Unknown Type';
     const id = defToDelete.id || 'Untitled';
     return (
       <DeleteConfirmationModal
         title={'FHIR JSON'}
-        item={`${type}/${id}`}
+        item={`${type} ${id}`}
         isOpen={openDeleteConfirmation}
         handleCloseModal={handleCloseDeleteConfirmation}
         handleDelete={handleCloseAndDelete}
@@ -259,10 +294,18 @@ export default function JSONOutput(props) {
   };
 
   const renderFileTreeView = () => {
-    const order = ['StructureDefinitions', 'ValueSets', 'CodeSystems', 'Instances', 'Unknown Type'];
+    const order = [
+      'Profiles',
+      'Extensions',
+      'Logical Models',
+      'Resources',
+      'ValueSets',
+      'CodeSystems',
+      'Instances',
+      'Unknown Type'
+    ];
     const grouped = groupBy(fhirDefinitions, (val) => {
-      if (['StructureDefinition', 'ValueSet', 'CodeSystem'].includes(val?.resourceType)) return `${val.resourceType}s`;
-      if (val?.resourceType != null) return 'Instances';
+      if (val && val.resourceType) return `${val.resourceType}s`;
       return 'Unknown Type';
     });
 
